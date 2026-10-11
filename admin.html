@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Galaksi Kita - Pemilik</title>
+<meta name="description" content="Peta perjalanan berdua, dari kenangan pertama sampai hari ini.">
+<meta name="theme-color" content="#07061a">
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@1,6..96,500;1,6..96,700&family=DM+Mono:wght@400;500&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-mode="owner">
+
+<canvas id="stars" aria-hidden="true"></canvas>
+
+<main>
+  <header class="hero">
+    <div class="galaxy" aria-hidden="true"></div>
+    <div class="wrap">
+      <span class="pill" id="pill"></span>
+      <p class="eyebrow">Peta perjalanan berdua</p>
+      <h1>Galaksi Kita</h1>
+      <p class="names" id="names"></p>
+      <p class="counter" id="counter"></p>
+      <div class="hero-actions" data-owner>
+        <button class="btn primary" type="button" data-open="memory">Tambah kenangan</button>
+        <button class="btn" type="button" data-open="settings">Atur nama dan tanggal</button>
+        <button class="btn" type="button" data-open="music">Atur musik</button>
+        <button class="btn" type="button" id="logoutBtn">Keluar</button>
+      </div>
+      <p class="note" id="sampleNote" hidden></p>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <section class="journey" aria-label="Perjalanan kenangan">
+      <div class="rail" id="rail"></div>
+      <div class="rail-lit" id="railLit"></div>
+      <ol class="stops" id="stops"></ol>
+    </section>
+
+    <section class="horizon" id="horizon">
+      <span class="node"></span>
+      <p class="eyebrow">Koordinat berikutnya</p>
+      <h2>Perjalanan ini belum selesai</h2>
+      <p>Setiap cerita baru akan menjadi planet berikutnya di jalur ini.</p>
+      <button class="btn primary" type="button" data-open="memory" data-owner>Tambah kenangan</button>
+      <p class="mode" id="mode"></p>
+    </section>
+  </div>
+</main>
+
+<button class="btn primary fab" type="button" data-open="memory" data-owner aria-label="Tambah kenangan baru">+ Kenangan</button>
+
+<button class="music" id="musicBtn" type="button" aria-pressed="false" hidden>
+  <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+  <span id="musicLabel">Putar musik</span>
+</button>
+
+<div class="scrim" id="sheet-login" hidden>
+  <form class="sheet" id="loginForm" role="dialog" aria-modal="true" aria-labelledby="logTitle" novalidate>
+    <p class="eyebrow">Khusus pemilik</p>
+    <h2 id="logTitle">Masuk</h2>
+    <div class="field">
+      <label for="lEmail">Email</label>
+      <input type="text" id="lEmail" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="lPass">Kata sandi</label>
+      <input type="password" id="lPass" autocomplete="current-password">
+    </div>
+    <p class="status" id="logStatus" role="status"></p>
+    <div class="row">
+      <a class="btn" href="./">Ke halaman pengunjung</a>
+      <button class="btn primary" type="submit" id="logSave">Masuk</button>
+    </div>
+  </form>
+</div>
+
+<div class="scrim" id="sheet-memory" hidden data-owner>
+  <form class="sheet" id="memoryForm" role="dialog" aria-modal="true" aria-labelledby="memTitle" novalidate>
+    <p class="eyebrow">Planet baru</p>
+    <h2 id="memTitle">Tambah kenangan</h2>
+    <div class="field">
+      <label for="fTitle">Judul</label>
+      <input type="text" id="fTitle" maxlength="120" placeholder="Contoh: Nonton senja pertama" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="fDate">Tanggal kejadian</label>
+      <input type="date" id="fDate">
+    </div>
+    <div class="field">
+      <label for="fDesc">Ceritanya</label>
+      <textarea id="fDesc" maxlength="1200" placeholder="Apa yang terjadi, apa yang kalian rasakan, apa yang paling diingat."></textarea>
+    </div>
+    <div class="field">
+      <span class="lab" id="photoLab">Foto</span>
+      <input type="file" id="fPhoto" accept="image/*" aria-labelledby="photoLab">
+      <img class="preview" id="fPreview" alt="Pratinjau foto" hidden>
+      <button class="linkbtn" type="button" id="fPhotoClear" hidden>Hapus foto</button>
+    </div>
+    <p class="status" id="memStatus" role="status"></p>
+    <div class="row">
+      <button class="btn" type="button" data-close>Batal</button>
+      <button class="btn primary" type="submit" id="memSave">Simpan kenangan</button>
+    </div>
+  </form>
+</div>
+
+<div class="scrim" id="sheet-settings" hidden data-owner>
+  <form class="sheet" id="settingsForm" role="dialog" aria-modal="true" aria-labelledby="setTitle" novalidate>
+    <p class="eyebrow">Titik awal</p>
+    <h2 id="setTitle">Atur galaksi</h2>
+    <div class="two">
+      <div class="field">
+        <label for="sA">Nama kamu</label>
+        <input type="text" id="sA" maxlength="40" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="sB">Nama dia</label>
+        <input type="text" id="sB" maxlength="40" autocomplete="off">
+      </div>
+    </div>
+    <div class="field">
+      <label for="sStart">Tanggal mulai bersama</label>
+      <input type="date" id="sStart">
+    </div>
+    <p class="status" id="setStatus" role="status"></p>
+    <div class="row">
+      <button class="btn" type="button" data-close>Batal</button>
+      <button class="btn primary" type="submit" id="setSave">Simpan</button>
+    </div>
+  </form>
+</div>
+
+<div class="scrim" id="sheet-music" hidden data-owner>
+  <form class="sheet" id="musicForm" role="dialog" aria-modal="true" aria-labelledby="musTitle" novalidate>
+    <p class="eyebrow">Latar suara</p>
+    <h2 id="musTitle">Atur musik</h2>
+    <p class="status" id="musCurrent"></p>
+    <div class="field">
+      <label for="mFile">File musik</label>
+      <input type="file" id="mFile" accept="audio/*">
+      <p class="hint">Format mp3, m4a, atau ogg. Disarankan di bawah 15 MB. Musik diputar berulang setelah pengunjung menekan tombol putar.</p>
+    </div>
+    <p class="status" id="musStatus" role="status"></p>
+    <div class="row">
+      <button class="btn" type="button" id="musRemove">Hapus musik</button>
+      <button class="btn" type="button" data-close>Tutup</button>
+      <button class="btn primary" type="submit" id="musSave">Unggah musik</button>
+    </div>
+  </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

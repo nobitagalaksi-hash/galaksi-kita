@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Galaksi Kita</title>
+<meta name="description" content="Peta perjalanan berdua, dari kenangan pertama sampai hari ini.">
+<meta name="theme-color" content="#07061a">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@1,6..96,500;1,6..96,700&family=DM+Mono:wght@400;500&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-mode="visitor">
+
+<canvas id="stars" aria-hidden="true"></canvas>
+
+<main>
+  <header class="hero">
+    <div class="galaxy" aria-hidden="true"></div>
+    <div class="wrap">
+      <span class="pill" id="pill"></span>
+      <p class="eyebrow">Peta perjalanan berdua</p>
+      <h1>Galaksi Kita</h1>
+      <p class="names" id="names"></p>
+      <p class="counter" id="counter"></p>
+      <p class="note" id="sampleNote" hidden></p>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <section class="journey" aria-label="Perjalanan kenangan">
+      <div class="rail" id="rail"></div>
+      <div class="rail-lit" id="railLit"></div>
+      <ol class="stops" id="stops"></ol>
+    </section>
+
+    <section class="horizon" id="horizon">
+      <span class="node"></span>
+      <p class="eyebrow">Koordinat berikutnya</p>
+      <h2>Perjalanan ini belum selesai</h2>
+      <p>Setiap cerita baru akan menjadi planet berikutnya di jalur ini.</p>
+      <p class="mode" id="mode"></p>
+    </section>
+  </div>
+</main>
+
+
+<button class="music" id="musicBtn" type="button" aria-pressed="false" hidden>
+  <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+  <span id="musicLabel">Putar musik</span>
+</button>
+
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
