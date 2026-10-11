@@ -236,6 +236,7 @@
   }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function publicUrl(path) { return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl; }
+  function hasMedia(it) { return !!(it.photo_path && sb); }
   function uid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
@@ -243,10 +244,36 @@
   function setStatus(id, text, err) { var s = $(id); if (!s) return; s.textContent = text || ''; s.className = 'status' + (err ? ' err' : ''); }
   function errText(e) {
     var m = String((e && (e.message || e.error_description)) || '');
+    if (/media_type/i.test(m)) return 'Database belum diperbarui untuk video. Jalankan supabase/migration-video.sql di SQL Editor Supabase.';
     if (/row-level security|permission|not authorized|JWT/i.test(m)) return 'Akun ini tidak punya izin mengubah isi. Pastikan email di supabase/schema.sql sama dengan email loginmu.';
     if (/payload too large|too large|exceeded/i.test(m)) return 'File terlalu besar. Pakai file yang lebih kecil.';
     if (/Failed to fetch|network/i.test(m)) return 'Koneksi bermasalah. Coba lagi sebentar lagi.';
     return 'Belum berhasil. ' + (m ? m : 'Coba lagi sebentar lagi.');
+  }
+
+  /* ---------- Video di kartu: jalan sendiri, tanpa suara ---------- */
+  var cardVideos = [], vio = null;
+  if (!RM && 'IntersectionObserver' in window) {
+    vio = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        var v = e.target;
+        if (e.intersectionRatio >= .3) { var p = v.play(); if (p && p.catch) p.catch(function () {}); } else v.pause();
+      });
+    }, { threshold: [0, .3] });
+  }
+  function resetCardVideos() { cardVideos.forEach(function (v) { if (vio) vio.unobserve(v); v.pause(); }); cardVideos = []; }
+  function resumeCardVideos() {
+    if (RM) return;
+    cardVideos.forEach(function (v) {
+      var r = v.getBoundingClientRect();
+      if (r.bottom > 0 && r.top < window.innerHeight * .8) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+    });
+  }
+  function makeVideo(url) {
+    var v = document.createElement('video');
+    v.src = url + '#t=0.1'; v.muted = true; v.defaultMuted = true; v.loop = true; v.playsInline = true;
+    v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.preload = 'metadata'; v.disablePictureInPicture = true;
+    return v;
   }
 
   /* ---------- Hero ---------- */
@@ -267,11 +294,19 @@
   var io = null, stopEls = [];
   function makeStop(it, i, sample) {
     var li = el('li', 'stop'); li.style.setProperty('--hue', HUES[i % HUES.length]); li.setAttribute('data-id', it.id);
+    li._it = it; li._i = i; li._sample = !!sample;
     li.appendChild(el('span', 'node'));
     var card = el('article', 'card');
-    if (it.photo_path && sb) {
-      var fig = el('figure', 'photo'), img = el('img'); img.src = publicUrl(it.photo_path); img.alt = it.title || 'Foto kenangan';
-      img.decoding = 'async'; img.loading = 'lazy'; fig.appendChild(img); card.appendChild(fig);
+    if (hasMedia(it)) {
+      var fig = el('figure', 'photo'), url = publicUrl(it.photo_path);
+      if (it.media_type === 'video') {
+        var vd = makeVideo(url); vd.setAttribute('aria-label', 'Cuplikan video: ' + (it.title || 'kenangan'));
+        fig.appendChild(vd); cardVideos.push(vd); if (vio) vio.observe(vd);
+      } else {
+        var img = el('img'); img.src = url; img.alt = it.title || 'Foto kenangan'; img.decoding = 'async'; img.loading = 'lazy'; fig.appendChild(img);
+      }
+      fig.appendChild(el('span', 'hintpill', it.media_type === 'video' ? 'Putar dengan suara' : 'Lihat'));
+      card.appendChild(fig);
     } else if (sample) {
       card.appendChild(el('div', 'photo ph', 'Tempat foto kalian'));
     }
@@ -284,6 +319,7 @@
     body.appendChild(el('h3', null, it.title || 'Tanpa judul'));
     body.appendChild(el('p', 'date', fmtD(it.event_date)));
     if (it.description) body.appendChild(el('p', 'desc', it.description));
+    var ob = el('button', 'linkbtn open-btn', 'Lihat kenangan'); ob.type = 'button'; body.appendChild(ob);
     if (!sample && editing()) {
       var act = el('div', 'actions'), del = el('button', 'linkbtn', 'Hapus'); del.type = 'button';
       var yes = el('button', 'linkbtn danger', 'Yakin, hapus'); yes.type = 'button'; yes.hidden = true;
@@ -311,6 +347,7 @@
       : 'Belum ada kenangan di sini. Yang tampil sekarang hanya contoh.';
     var ol = $('#stops'); ol.textContent = '';
     if (io) io.disconnect();
+    resetCardVideos();
     list.forEach(function (it, i) { ol.appendChild(makeStop(it, i, sample)); });
     stopEls = Array.prototype.slice.call(ol.children);
     stopEls.forEach(function (s) {
@@ -397,6 +434,99 @@
     audio.play().then(function () { playing = true; }, function () { musicErr = true; }).then(updateMusicUI);
   });
 
+  /* ---------- Pratinjau kenangan: lorong galaksi ---------- */
+  var viewer = $('#viewer'), vState = 'closed', vOrigin = { x: 0, y: 0 }, resumeMusic = false, vTimer = null, vTimer2 = null, lastFocusV = null;
+  var wc = $('#warp'), wx = wc.getContext('2d'), warpRaf = 0;
+  function runWarp(dir, cx, cy, dur) {
+    var dp = Math.min(window.devicePixelRatio || 1, 2), w = window.innerWidth, h = window.innerHeight;
+    wc.width = Math.round(w * dp); wc.height = Math.round(h * dp); wx.setTransform(dp, 0, 0, dp, 0, 0);
+    var maxR = Math.sqrt(w * w + h * h), arr = [], i;
+    for (i = 0; i < 170; i++) arr.push({ a: Math.random() * 6.2832, r0: Math.random() * 30, s: .35 + Math.random() * .75, w: .6 + Math.random() * 1.5, c: TINTS[(Math.random() * TINTS.length) | 0] });
+    var t0 = performance.now();
+    cancelAnimationFrame(warpRaf);
+    (function frame(now) {
+      var k = Math.min(1, (now - t0) / dur), kp = dir > 0 ? k : 1 - k;
+      var alpha = dir > 0 ? Math.pow(1 - k, .8) : Math.min(1, k * 3) * (1 - k * .5);
+      wx.clearRect(0, 0, w, h);
+      var g = wx.createRadialGradient(cx, cy, 0, cx, cy, 40 + 160 * (dir > 0 ? 1 - k : k));
+      g.addColorStop(0, 'rgba(255,245,225,' + (alpha * .9).toFixed(3) + ')'); g.addColorStop(1, 'rgba(255,200,230,0)');
+      wx.fillStyle = g; wx.beginPath(); wx.arc(cx, cy, 200, 0, 6.2832); wx.fill();
+      wx.lineCap = 'round';
+      for (var j = 0; j < arr.length; j++) {
+        var a = arr[j], pos = a.r0 + a.s * maxR * kp * kp, len = a.s * maxR * (.03 + .2 * kp);
+        var cs = Math.cos(a.a), sn = Math.sin(a.a);
+        wx.strokeStyle = 'rgba(' + a.c + ',' + alpha.toFixed(3) + ')'; wx.lineWidth = a.w;
+        wx.beginPath(); wx.moveTo(cx + cs * Math.max(0, pos - len), cy + sn * Math.max(0, pos - len)); wx.lineTo(cx + cs * pos, cy + sn * pos); wx.stroke();
+      }
+      if (k < 1) warpRaf = requestAnimationFrame(frame); else wx.clearRect(0, 0, w, h);
+    })(t0);
+  }
+  function openViewer(li, ev) {
+    if (vState !== 'closed') return;
+    var it = li._it, sample = li._sample, idx = li._i;
+    var x = ev && ev.clientX, y = ev && ev.clientY;
+    if (!x && !y) {
+      var r = (ev && ev.target && ev.target.getBoundingClientRect) ? ev.target.getBoundingClientRect() : li.getBoundingClientRect();
+      x = r.left + r.width / 2; y = r.top + r.height / 2;
+    }
+    vOrigin = { x: x, y: y }; vState = 'opening'; lastFocusV = document.activeElement;
+    var hue = parseInt(li.style.getPropertyValue('--hue'), 10) || 330;
+    viewer.style.setProperty('--hue', hue); viewer.style.setProperty('--cx', x + 'px'); viewer.style.setProperty('--cy', y + 'px');
+    var m = $('#vMedia'), vid = null; m.textContent = '';
+    if (hasMedia(it)) {
+      var url = publicUrl(it.photo_path);
+      if (it.media_type === 'video') {
+        vid = document.createElement('video'); vid.src = url; vid.controls = true; vid.playsInline = true; vid.setAttribute('playsinline', ''); vid.preload = 'auto';
+        vid.setAttribute('aria-label', 'Video: ' + (it.title || 'kenangan')); m.appendChild(vid);
+      } else { var im = el('img'); im.src = url; im.alt = it.title || 'Foto kenangan'; m.appendChild(im); }
+    } else if (sample) m.appendChild(el('div', 'ph', 'Tempat foto kalian'));
+    m.hidden = !m.firstChild; $('#vInner').classList.toggle('nomedia', !m.firstChild);
+    var meta = $('#vMeta'); meta.textContent = '';
+    meta.appendChild(el('span', null, 'Kenangan ' + String(idx + 1).padStart(2, '0')));
+    if (sample) meta.appendChild(el('span', 'badge', 'Contoh'));
+    else { var dn = dayNo(it.event_date); if (dn) meta.appendChild(el('span', null, 'Hari ke-' + dn)); }
+    $('#vTitle').textContent = it.title || 'Tanpa judul'; $('#vDate').textContent = fmtD(it.event_date);
+    var d = $('#vDesc'); d.textContent = it.description || ''; d.hidden = !it.description;
+    document.documentElement.style.overflow = 'hidden'; document.body.classList.add('viewing');
+    var mainEl = $('main'); if (mainEl) mainEl.inert = true;
+    cardVideos.forEach(function (v) { v.pause(); });
+    if (vid && playing && audio) { audio.pause(); playing = false; resumeMusic = true; updateMusicUI(); }
+    viewer.hidden = false; viewer.setAttribute('aria-hidden', 'false'); viewer.scrollTop = 0;
+    void viewer.offsetWidth;
+    viewer.classList.add('open');
+    if (!RM) runWarp(1, x, y, 1000);
+    vTimer = setTimeout(function () {
+      viewer.classList.add('show'); vState = 'open'; $('#vClose').focus();
+      if (vid) { vid.muted = false; var pp = vid.play(); if (pp && pp.catch) pp.catch(function () {}); }
+    }, RM ? 0 : 620);
+  }
+  function closeViewer() {
+    if (vState !== 'open' && vState !== 'opening') return;
+    clearTimeout(vTimer); vState = 'closing';
+    var vid = viewer.querySelector('video'); if (vid) vid.pause();
+    viewer.classList.remove('show'); viewer.classList.remove('open');
+    if (!RM) runWarp(-1, vOrigin.x, vOrigin.y, 750);
+    vTimer2 = setTimeout(function () {
+      viewer.hidden = true; viewer.setAttribute('aria-hidden', 'true'); $('#vMedia').textContent = ''; vState = 'closed';
+      document.documentElement.style.overflow = ''; document.body.classList.remove('viewing');
+      var mainEl = $('main'); if (mainEl) mainEl.inert = false;
+      resumeCardVideos();
+      if (resumeMusic && audio) {
+        resumeMusic = false;
+        var p = audio.play(); if (p && p.then) p.then(function () { playing = true; updateMusicUI(); }, function () {});
+      }
+      if (lastFocusV && lastFocusV.focus) lastFocusV.focus();
+    }, RM ? 0 : 800);
+  }
+  $('#stops').addEventListener('click', function (e) {
+    if (e.target.closest('.actions')) return;
+    var li = e.target.closest('.stop');
+    if (li && li._it) openViewer(li, e);
+  });
+  $('#vClose').addEventListener('click', closeViewer);
+  viewer.addEventListener('click', function (e) { if (e.target === viewer || e.target.id === 'vInner') closeViewer(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && vState !== 'closed') closeViewer(); });
+
   /* ---------- Roadmap dimulai ---------- */
   render();
   load();
@@ -474,8 +604,9 @@
   });
   $('#logoutBtn').addEventListener('click', function () { if (sb) sb.auth.signOut(); });
 
-  /* ---------- Foto ---------- */
-  var pendingPhoto = null, previewUrl = null;
+  /* ---------- Foto dan video ---------- */
+  var pendingMedia = null, previewUrl = null;
+  var MAX_VIDEO = 40 * 1024 * 1024;
   function compress(file) {
     return new Promise(function (res, rej) {
       var url = URL.createObjectURL(file), img = new Image();
@@ -492,31 +623,45 @@
     });
   }
   function clearPhoto() {
-    pendingPhoto = null; $('#fPhoto').value = '';
+    pendingMedia = null; $('#fPhoto').value = '';
     if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+    var pv = $('#fPreviewVideo'); pv.pause(); pv.removeAttribute('src'); pv.hidden = true;
     $('#fPreview').hidden = true; $('#fPhotoClear').hidden = true;
   }
   $('#fPhoto').addEventListener('change', function () {
     var f = this.files && this.files[0]; if (!f) { clearPhoto(); return; }
+    if (f.type && f.type.indexOf('video/') === 0) {
+      if (f.size > MAX_VIDEO) { clearPhoto(); setStatus('#memStatus', 'Video lebih dari 40 MB. Kecilkan dulu, misalnya jadi 720p dan di bawah 30 detik.', true); return; }
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      pendingMedia = { blob: f, kind: 'video' }; previewUrl = URL.createObjectURL(f);
+      $('#fPreview').hidden = true;
+      var pv = $('#fPreviewVideo'); pv.src = previewUrl; pv.hidden = false; $('#fPhotoClear').hidden = false;
+      setStatus('#memStatus', ''); return;
+    }
     setStatus('#memStatus', 'Memproses foto...');
     compress(f).then(function (b) {
-      pendingPhoto = b; if (previewUrl) URL.revokeObjectURL(previewUrl);
+      pendingMedia = { blob: b, kind: 'image' }; if (previewUrl) URL.revokeObjectURL(previewUrl);
       previewUrl = URL.createObjectURL(b);
+      $('#fPreviewVideo').hidden = true;
       var p = $('#fPreview'); p.src = previewUrl; p.hidden = false; $('#fPhotoClear').hidden = false; setStatus('#memStatus', '');
-    }, function () { clearPhoto(); setStatus('#memStatus', 'Foto tidak bisa dibaca. Pakai file JPG atau PNG.', true); });
+    }, function () { clearPhoto(); setStatus('#memStatus', 'File tidak bisa dibaca. Pakai foto JPG atau PNG, atau video mp4 atau webm.', true); });
   });
   $('#fPhotoClear').addEventListener('click', clearPhoto);
 
   /* ---------- Simpan data ---------- */
-  function addMemory(rec, blob) {
-    var path = null, p = Promise.resolve();
-    if (blob) {
-      path = 'photos/' + uid() + '.jpg';
-      p = sb.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' })
-        .then(function (r) { if (r.error) throw r.error; });
+  function addMemory(rec, media) {
+    var path = null, kind = 'image', p = Promise.resolve();
+    if (media) {
+      kind = media.kind;
+      var opts = { cacheControl: '31536000' };
+      if (kind === 'video') {
+        var ext = (/\.(mp4|webm|mov|m4v)$/i.exec(media.blob.name || '') || [null, 'mp4'])[1].toLowerCase();
+        path = 'videos/' + uid() + '.' + ext; opts.contentType = media.blob.type || 'video/mp4';
+      } else { path = 'photos/' + uid() + '.jpg'; opts.contentType = 'image/jpeg'; }
+      p = sb.storage.from(BUCKET).upload(path, media.blob, opts).then(function (r) { if (r.error) throw r.error; });
     }
     return p.then(function () {
-      return sb.from('memories').insert({ title: rec.title, event_date: rec.date, description: rec.desc, photo_path: path }).select().single();
+      return sb.from('memories').insert({ title: rec.title, event_date: rec.date, description: rec.desc, photo_path: path, media_type: kind }).select().single();
     }).then(function (r) {
       if (r.error) { if (path) sb.storage.from(BUCKET).remove([path]); throw r.error; }
       return r.data.id;
@@ -535,8 +680,9 @@
     e.preventDefault(); if (busy || !sb) return;
     var title = $('#fTitle').value.trim(), date = $('#fDate').value;
     if (!title || !date) { setStatus('#memStatus', 'Isi judul dan tanggal dulu.', true); return; }
-    busy = true; $('#memSave').disabled = true; setStatus('#memStatus', 'Menyimpan...');
-    addMemory({ title: title.slice(0, 120), date: date, desc: $('#fDesc').value.trim().slice(0, 1200) }, pendingPhoto)
+    busy = true; $('#memSave').disabled = true;
+    setStatus('#memStatus', pendingMedia && pendingMedia.kind === 'video' ? 'Mengunggah video. Jangan tutup halaman sampai selesai...' : 'Menyimpan...');
+    addMemory({ title: title.slice(0, 120), date: date, desc: $('#fDesc').value.trim().slice(0, 1200) }, pendingMedia)
       .then(function (id) {
         pendingFocus = id; return load();
       }).then(function () {

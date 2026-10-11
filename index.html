@@ -52,6 +52,20 @@
   <span id="musicLabel">Putar musik</span>
 </button>
 
+<div class="viewer" id="viewer" hidden aria-hidden="true">
+  <canvas id="warp" aria-hidden="true"></canvas>
+  <button class="btn vclose" id="vClose" type="button">Tutup</button>
+  <div class="viewer-inner" id="vInner" role="dialog" aria-modal="true" aria-labelledby="vTitle">
+    <div class="vmedia" id="vMedia"></div>
+    <div class="vtext">
+      <p class="meta" id="vMeta"></p>
+      <h2 id="vTitle"></h2>
+      <p class="date" id="vDate"></p>
+      <p class="desc" id="vDesc"></p>
+    </div>
+  </div>
+</div>
+
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>

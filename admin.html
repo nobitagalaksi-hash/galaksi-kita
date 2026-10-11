@@ -60,6 +60,20 @@
   <span id="musicLabel">Putar musik</span>
 </button>
 
+<div class="viewer" id="viewer" hidden aria-hidden="true">
+  <canvas id="warp" aria-hidden="true"></canvas>
+  <button class="btn vclose" id="vClose" type="button">Tutup</button>
+  <div class="viewer-inner" id="vInner" role="dialog" aria-modal="true" aria-labelledby="vTitle">
+    <div class="vmedia" id="vMedia"></div>
+    <div class="vtext">
+      <p class="meta" id="vMeta"></p>
+      <h2 id="vTitle"></h2>
+      <p class="date" id="vDate"></p>
+      <p class="desc" id="vDesc"></p>
+    </div>
+  </div>
+</div>
+
 <div class="scrim" id="sheet-login" hidden>
   <form class="sheet" id="loginForm" role="dialog" aria-modal="true" aria-labelledby="logTitle" novalidate>
     <p class="eyebrow">Khusus pemilik</p>
@@ -97,10 +111,12 @@
       <textarea id="fDesc" maxlength="1200" placeholder="Apa yang terjadi, apa yang kalian rasakan, apa yang paling diingat."></textarea>
     </div>
     <div class="field">
-      <span class="lab" id="photoLab">Foto</span>
-      <input type="file" id="fPhoto" accept="image/*" aria-labelledby="photoLab">
+      <span class="lab" id="photoLab">Foto atau video</span>
+      <input type="file" id="fPhoto" accept="image/*,video/mp4,video/webm,video/quicktime" aria-labelledby="photoLab">
+      <p class="hint">Video mp4 atau webm, maksimal 40 MB. Disarankan 720p dan di bawah 30 detik supaya cepat dimuat.</p>
       <img class="preview" id="fPreview" alt="Pratinjau foto" hidden>
-      <button class="linkbtn" type="button" id="fPhotoClear" hidden>Hapus foto</button>
+      <video class="preview" id="fPreviewVideo" muted playsinline controls hidden></video>
+      <button class="linkbtn" type="button" id="fPhotoClear" hidden>Hapus file</button>
     </div>
     <p class="status" id="memStatus" role="status"></p>
     <div class="row">
