@@ -423,6 +423,19 @@
     var mc = $('#musCurrent');
     if (mc) mc.textContent = has ? 'Musik saat ini: ' + (state.meta.music_name || 'tanpa nama') : 'Belum ada musik.';
   }
+  /* Saat pratinjau terbuka, musik tetap jalan tapi mengecil perlahan jadi 15%, lalu naik lagi saat ditutup */
+  var VOL_LOW = .15, volRaf = 0;
+  function fadeVolume(to, dur) {
+    if (!audio) return;
+    cancelAnimationFrame(volRaf);
+    if (RM) { audio.volume = to; return; }
+    var from = audio.volume, t0 = performance.now();
+    (function step(now) {
+      var k = Math.min(1, (now - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      audio.volume = Math.max(0, Math.min(1, from + (to - from) * e));
+      if (k < 1) volRaf = requestAnimationFrame(step);
+    })(t0);
+  }
   $('#musicBtn').addEventListener('click', function () {
     var path = state.meta.music_path; if (!sb || !path) return;
     musicErr = false;
@@ -431,6 +444,7 @@
       if (audio) audio.pause();
       audio = new Audio(publicUrl(path)); audio.loop = true; audio.preload = 'auto'; audioPath = path;
     }
+    audio.volume = (typeof vState !== 'undefined' && vState !== 'closed') ? VOL_LOW : 1;
     audio.play().then(function () { playing = true; }, function () { musicErr = true; }).then(updateMusicUI);
   });
 
@@ -490,7 +504,7 @@
     document.documentElement.style.overflow = 'hidden'; document.body.classList.add('viewing');
     var mainEl = $('main'); if (mainEl) mainEl.inert = true;
     cardVideos.forEach(function (v) { v.pause(); });
-    if (vid && playing && audio) { audio.pause(); playing = false; resumeMusic = true; updateMusicUI(); }
+    if (playing) fadeVolume(VOL_LOW, 1600);
     viewer.hidden = false; viewer.setAttribute('aria-hidden', 'false'); viewer.scrollTop = 0;
     void viewer.offsetWidth;
     viewer.classList.add('open');
@@ -503,6 +517,7 @@
   function closeViewer() {
     if (vState !== 'open' && vState !== 'opening') return;
     clearTimeout(vTimer); vState = 'closing';
+    if (playing) fadeVolume(1, 1400);
     var vid = viewer.querySelector('video'); if (vid) vid.pause();
     viewer.classList.remove('show'); viewer.classList.remove('open');
     if (!RM) runWarp(-1, vOrigin.x, vOrigin.y, 750);
@@ -511,10 +526,6 @@
       document.documentElement.style.overflow = ''; document.body.classList.remove('viewing');
       var mainEl = $('main'); if (mainEl) mainEl.inert = false;
       resumeCardVideos();
-      if (resumeMusic && audio) {
-        resumeMusic = false;
-        var p = audio.play(); if (p && p.then) p.then(function () { playing = true; updateMusicUI(); }, function () {});
-      }
       if (lastFocusV && lastFocusV.focus) lastFocusV.focus();
     }, RM ? 0 : 800);
   }
