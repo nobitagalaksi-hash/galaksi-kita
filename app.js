@@ -423,8 +423,8 @@
     var mc = $('#musCurrent');
     if (mc) mc.textContent = has ? 'Musik saat ini: ' + (state.meta.music_name || 'tanpa nama') : 'Belum ada musik.';
   }
-  /* Saat pratinjau terbuka, musik tetap jalan tapi mengecil perlahan jadi 15%, lalu naik lagi saat ditutup */
-  var VOL_LOW = .15, volRaf = 0;
+  /* Saat pratinjau terbuka, musik tetap jalan tapi mengecil perlahan jadi 25%, lalu naik lagi saat ditutup */
+  var VOL_LOW = .25, volRaf = 0;
   function fadeVolume(to, dur) {
     if (!audio) return;
     cancelAnimationFrame(volRaf);
