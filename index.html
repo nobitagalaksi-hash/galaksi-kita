@@ -47,10 +47,23 @@
 </main>
 
 
-<button class="music" id="musicBtn" type="button" aria-pressed="false" hidden>
-  <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
-  <span id="musicLabel">Putar musik</span>
-</button>
+<div class="musicbar" id="musicBar" hidden>
+  <div class="playlist" id="playlist" hidden role="group" aria-label="Daftar lagu">
+    <p class="eyebrow">Pilih lagu</p>
+    <ol id="songList"></ol>
+    <div class="plctl" id="plCtl">
+      <button class="btn small" type="button" id="plPrev">Sebelumnya</button>
+      <button class="btn small" type="button" id="plNext">Berikutnya</button>
+    </div>
+  </div>
+  <button class="music" id="musicBtn" type="button" aria-pressed="false">
+    <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span id="musicLabel">Putar musik</span>
+  </button>
+  <button class="music mini" id="listBtn" type="button" aria-expanded="false" aria-controls="playlist" aria-label="Pilih lagu">
+    <span class="lst" aria-hidden="true"><i></i><i></i><i></i></span><span class="lbl">Lagu</span>
+  </button>
+</div>
 
 <div class="viewer" id="viewer" hidden aria-hidden="true">
   <canvas id="warp" aria-hidden="true"></canvas>

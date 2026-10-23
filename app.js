@@ -213,7 +213,7 @@
   }
 
   /* ---------- Data & util ---------- */
-  var state = { items: [], meta: {}, ready: false, loadError: false, session: null };
+  var state = { items: [], meta: {}, songs: [], songsErr: false, ready: false, loadError: false, session: null };
   var pendingFocus = null;
   var HUES = [330, 265, 200, 45, 295, 185];
   var SAMPLES = [
@@ -244,6 +244,7 @@
   function setStatus(id, text, err) { var s = $(id); if (!s) return; s.textContent = text || ''; s.className = 'status' + (err ? ' err' : ''); }
   function errText(e) {
     var m = String((e && (e.message || e.error_description)) || '');
+    if (/songs/i.test(m) && /schema cache|does not exist|relation/i.test(m)) return 'Daftar lagu belum aktif. Jalankan supabase/migration-musik.sql di SQL Editor Supabase.';
     if (/media_type/i.test(m)) return 'Database belum diperbarui untuk video. Jalankan supabase/migration-video.sql di SQL Editor Supabase.';
     if (/row-level security|permission|not authorized|JWT/i.test(m)) return 'Akun ini tidak punya izin mengubah isi. Pastikan email di supabase/schema.sql sama dengan email loginmu.';
     if (/payload too large|too large|exceeded/i.test(m)) return 'File terlalu besar. Pakai file yang lebih kecil.';
@@ -402,29 +403,61 @@
     if (!sb) { state.ready = true; render(); updateMusicUI(); return Promise.resolve(); }
     return Promise.all([
       sb.from('memories').select('*').order('event_date', { ascending: true }).order('created_at', { ascending: true }),
-      sb.from('settings').select('*').eq('id', 1).maybeSingle()
+      sb.from('settings').select('*').eq('id', 1).maybeSingle(),
+      sb.from('songs').select('*').order('created_at', { ascending: true })
     ]).then(function (r) {
       if (r[0].error) throw r[0].error;
       state.items = r[0].data || [];
       state.meta = (r[1] && r[1].data) || {};
+      if (r[2] && r[2].error) {
+        /* Tabel songs belum dibuat: pakai lagu tunggal lama supaya musik tetap jalan */
+        state.songsErr = true;
+        state.songs = state.meta.music_path ? [{ id: 'legacy', title: String(state.meta.music_name || 'Lagu kita').replace(/\.[A-Za-z0-9]+$/, ''), file_path: state.meta.music_path }] : [];
+      } else { state.songsErr = false; state.songs = (r[2] && r[2].data) || []; }
       state.loadError = false;
     }).catch(function () { state.loadError = true; })
-      .then(function () { state.ready = true; render(); updateMusicUI(); });
+      .then(function () { state.ready = true; syncSongs(); render(); updateMusicUI(); if (OWNER) renderSongAdmin(); });
   }
 
-  /* ---------- Musik (pengunjung dan pemilik) ---------- */
-  var audio = null, audioPath = null, playing = false, musicErr = false;
+  /* ---------- Musik: daftar lagu yang bisa dipilih (pengunjung dan pemilik) ---------- */
+  var audio = null, curId = null, playing = false, musicErr = false, listOpen = false;
+  function curIndex() { for (var i = 0; i < state.songs.length; i++) if (state.songs[i].id === curId) return i; return -1; }
+  function stopPlayback() {
+    if (audio) { audio.pause(); audio.removeAttribute('src'); try { audio.load(); } catch (e) {} }
+    curId = null; playing = false;
+  }
+  function syncSongs() { if (curId && curIndex() < 0) stopPlayback(); }
+  function setList(open) {
+    listOpen = !!open;
+    $('#playlist').hidden = !listOpen;
+    $('#listBtn').setAttribute('aria-expanded', listOpen ? 'true' : 'false');
+  }
+  function renderSongList() {
+    var ol = $('#songList'); ol.textContent = '';
+    state.songs.forEach(function (sg, i) {
+      var li = el('li'), on = sg.id === curId;
+      var btn = el('button', 'song' + (on ? ' on' : '') + (on && playing ? ' playing' : '')); btn.type = 'button';
+      var eq = el('span', 'eq'); eq.setAttribute('aria-hidden', 'true');
+      for (var k = 0; k < 3; k++) eq.appendChild(document.createElement('i'));
+      btn.appendChild(eq); btn.appendChild(el('span', 'stitle', sg.title || 'Tanpa judul'));
+      if (on) btn.setAttribute('aria-current', 'true');
+      btn.addEventListener('click', function () { playSong(i); });
+      li.appendChild(btn); ol.appendChild(li);
+    });
+  }
   function updateMusicUI() {
-    var has = !!(sb && state.meta.music_path), b = $('#musicBtn');
-    b.hidden = !has;
+    var n = state.songs.length, b = $('#musicBtn'), sg = state.songs[curIndex()] || null;
+    $('#musicBar').hidden = n === 0;
     b.classList.toggle('playing', playing);
     b.setAttribute('aria-pressed', playing ? 'true' : 'false');
-    $('#musicLabel').textContent = musicErr ? 'Musik gagal diputar' : playing ? 'Jeda musik' : 'Putar musik';
-    var mc = $('#musCurrent');
-    if (mc) mc.textContent = has ? 'Musik saat ini: ' + (state.meta.music_name || 'tanpa nama') : 'Belum ada musik.';
+    b.setAttribute('aria-label', playing ? 'Jeda musik' : 'Putar musik');
+    $('#musicLabel').textContent = musicErr ? 'Musik gagal diputar' : (playing && sg ? sg.title : 'Putar musik');
+    $('#listBtn').hidden = n < 2; $('#plCtl').hidden = n < 2;
+    if (n < 2 && listOpen) setList(false);
+    renderSongList();
   }
-  /* Saat pratinjau terbuka, musik tetap jalan tapi mengecil perlahan jadi 25%, lalu naik lagi saat ditutup */
-  var VOL_LOW = .25, volRaf = 0;
+  /* Saat pratinjau terbuka, musik tetap jalan tapi mengecil perlahan jadi 15%, lalu naik lagi saat ditutup */
+  var VOL_LOW = .15, volRaf = 0;
   function fadeVolume(to, dur) {
     if (!audio) return;
     cancelAnimationFrame(volRaf);
@@ -436,17 +469,45 @@
       if (k < 1) volRaf = requestAnimationFrame(step);
     })(t0);
   }
-  $('#musicBtn').addEventListener('click', function () {
-    var path = state.meta.music_path; if (!sb || !path) return;
-    musicErr = false;
-    if (playing) { audio.pause(); playing = false; updateMusicUI(); return; }
-    if (!audio || audioPath !== path) {
-      if (audio) audio.pause();
-      audio = new Audio(publicUrl(path)); audio.loop = true; audio.preload = 'auto'; audioPath = path;
+  function playSong(i) {
+    var sg = state.songs[i]; if (!sg) return;
+    var reload = musicErr; musicErr = false;
+    if (!audio) {
+      audio = new Audio(); audio.preload = 'auto';
+      audio.addEventListener('ended', function () { stepSong(1); });
+      audio.addEventListener('error', function () { if (audio.getAttribute('src')) { playing = false; musicErr = true; updateMusicUI(); } });
     }
-    audio.volume = (typeof vState !== 'undefined' && vState !== 'closed') ? VOL_LOW : 1;
-    audio.play().then(function () { playing = true; }, function () { musicErr = true; }).then(updateMusicUI);
+    cancelAnimationFrame(volRaf);
+    if (curId !== sg.id || reload || !audio.getAttribute('src')) { audio.src = publicUrl(sg.file_path); curId = sg.id; }
+    audio.loop = state.songs.length === 1;
+    audio.volume = vState !== 'closed' ? VOL_LOW : 1;
+    var p = audio.play();
+    playing = true; updateMusicUI();
+    if (p && p.then) p.then(function () {}, function (err) {
+      if (err && err.name === 'AbortError') return;
+      playing = false; musicErr = true; updateMusicUI();
+    });
+  }
+  function stepSong(d) {
+    var n = state.songs.length; if (!n) return;
+    var i = curIndex(); if (i < 0) i = d > 0 ? -1 : 0;
+    playSong((i + d + n) % n);
+  }
+  $('#musicBtn').addEventListener('click', function () {
+    if (!state.songs.length) return;
+    if (playing) { audio.pause(); playing = false; updateMusicUI(); return; }
+    playSong(curIndex() < 0 ? 0 : curIndex());
   });
+  $('#listBtn').addEventListener('click', function () { setList(!listOpen); });
+  $('#plPrev').addEventListener('click', function () { stepSong(-1); });
+  $('#plNext').addEventListener('click', function () { stepSong(1); });
+  document.addEventListener('click', function (e) {
+    if (!listOpen) return;
+    /* composedPath dicatat saat klik terjadi, jadi tetap benar walau tombol yang diklik sudah dibangun ulang */
+    var path = e.composedPath ? e.composedPath() : [], bar = $('#musicBar');
+    if (path.length ? path.indexOf(bar) < 0 : !e.target.closest('#musicBar')) setList(false);
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && listOpen) setList(false); });
 
   /* ---------- Pratinjau kenangan: lorong galaksi ---------- */
   var viewer = $('#viewer'), vState = 'closed', vOrigin = { x: 0, y: 0 }, resumeMusic = false, vTimer = null, vTimer2 = null, lastFocusV = null;
@@ -568,7 +629,8 @@
       $('#sA').value = state.meta.name_a || ''; $('#sB').value = state.meta.name_b || ''; $('#sStart').value = state.meta.start_date || '';
       setTimeout(function () { $('#sA').focus(); }, 30);
     } else if (name === 'music') {
-      updateMusicUI(); setStatus('#musStatus', '');
+      renderSongAdmin(); setStatus('#musStatus', '');
+      setTimeout(function () { var n = $('#mName'); if (n) n.focus(); }, 30);
     } else if (name === 'login') {
       setTimeout(function () { $('#lEmail').focus(); }, 30);
     }
@@ -714,39 +776,78 @@
       .then(function () { $('#setSave').disabled = false; });
   });
 
-  /* ---------- Musik: unggah dan hapus ---------- */
+  /* ---------- Lagu: tambah, ubah judul, hapus ---------- */
   var musicBusy = false;
+  function renderSongAdmin() {
+    var ul = $('#musList'); if (!ul) return;
+    var w = $('#musWarn');
+    w.textContent = state.songsErr ? 'Daftar lagu belum aktif di database. Jalankan supabase/migration-musik.sql di SQL Editor Supabase, lalu muat ulang halaman.' : '';
+    w.className = 'status' + (state.songsErr ? ' err' : '');
+    $('#musSave').disabled = state.songsErr || musicBusy;
+    ul.textContent = '';
+    if (!state.songs.length) { ul.appendChild(el('li', 'songempty', 'Belum ada lagu. Tambahkan lagu pertama di bawah.')); return; }
+    state.songs.forEach(function (sg) {
+      var li = el('li', 'songrow'), name = el('span', 'sname', sg.title || 'Tanpa judul');
+      li.appendChild(name);
+      if (state.songsErr) { ul.appendChild(li); return; }
+      var acts = el('span', 'acts');
+      var ren = el('button', 'linkbtn', 'Ubah judul'); ren.type = 'button';
+      var del = el('button', 'linkbtn', 'Hapus'); del.type = 'button';
+      var yes = el('button', 'linkbtn danger', 'Yakin, hapus'); yes.type = 'button'; yes.hidden = true;
+      var no = el('button', 'linkbtn', 'Batal'); no.type = 'button'; no.hidden = true;
+      var inp = null;
+      function saveTitle() {
+        var t = inp.value.trim().slice(0, 80);
+        if (!t) { setStatus('#musStatus', 'Judul tidak boleh kosong.', true); return; }
+        ren.disabled = true; setStatus('#musStatus', 'Menyimpan judul...');
+        sb.from('songs').update({ title: t }).eq('id', sg.id).select().then(function (r) {
+          if (r.error) throw r.error;
+          if (!r.data || !r.data.length) throw new Error('Tidak ada izin mengubah judul.');
+          return load();
+        }).then(function () { setStatus('#musStatus', 'Judul diperbarui.'); renderSongAdmin(); },
+          function (err) { ren.disabled = false; setStatus('#musStatus', errText(err), true); });
+      }
+      ren.onclick = function () {
+        if (inp) { saveTitle(); return; }
+        inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 80; inp.value = sg.title || '';
+        inp.setAttribute('aria-label', 'Judul lagu');
+        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); saveTitle(); } });
+        li.replaceChild(inp, name); ren.textContent = 'Simpan'; del.hidden = true; inp.focus(); inp.select();
+      };
+      del.onclick = function () { del.hidden = true; ren.hidden = true; yes.hidden = false; no.hidden = false; yes.focus(); };
+      no.onclick = function () { del.hidden = false; ren.hidden = false; yes.hidden = true; no.hidden = true; del.focus(); };
+      yes.onclick = function () {
+        yes.disabled = true; setStatus('#musStatus', 'Menghapus...');
+        sb.from('songs').delete().eq('id', sg.id).select().then(function (r) {
+          if (r.error) throw r.error;
+          if (!r.data || !r.data.length) throw new Error('Tidak ada izin menghapus.');
+          sb.storage.from(BUCKET).remove([sg.file_path]);
+          return load();
+        }).then(function () { setStatus('#musStatus', 'Lagu dihapus.'); renderSongAdmin(); },
+          function (err) { yes.disabled = false; setStatus('#musStatus', errText(err), true); });
+      };
+      acts.appendChild(ren); acts.appendChild(del); acts.appendChild(yes); acts.appendChild(no);
+      li.appendChild(acts); ul.appendChild(li);
+    });
+  }
   $('#musicForm').addEventListener('submit', function (e) {
-    e.preventDefault(); if (musicBusy || !sb) return;
+    e.preventDefault(); if (musicBusy || !sb || state.songsErr) return;
     var f = $('#mFile').files && $('#mFile').files[0];
     if (!f) { setStatus('#musStatus', 'Pilih file musik dulu.', true); return; }
     if (f.size > 40 * 1024 * 1024) { setStatus('#musStatus', 'File lebih dari 40 MB. Kecilkan dulu atau pilih lagu lain.', true); return; }
-    musicBusy = true; $('#musSave').disabled = true; setStatus('#musStatus', 'Mengunggah musik...');
-    var safe = f.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-').slice(-60);
-    var path = 'music/' + Date.now() + '-' + safe, old = state.meta.music_path;
+    var title = ($('#mName').value.trim() || f.name.replace(/\.[^.]+$/, '')).slice(0, 80) || 'Lagu kita';
+    musicBusy = true; $('#musSave').disabled = true; setStatus('#musStatus', 'Mengunggah lagu...');
+    var safe = f.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-').slice(-60), path = 'music/' + Date.now() + '-' + safe;
     sb.storage.from(BUCKET).upload(path, f, { contentType: f.type || 'audio/mpeg', cacheControl: '31536000' })
       .then(function (r) {
         if (r.error) throw r.error;
-        return sb.from('settings').upsert({ id: 1, music_path: path, music_name: f.name.slice(0, 80) }).select();
+        return sb.from('songs').insert({ title: title, file_path: path }).select();
       }).then(function (r) {
         if (r.error || !r.data || !r.data.length) { sb.storage.from(BUCKET).remove([path]); throw r.error || new Error('Tidak ada izin menyimpan.'); }
-        if (old) sb.storage.from(BUCKET).remove([old]);
-        if (audio) { audio.pause(); playing = false; }
-        $('#mFile').value = '';
+        $('#mFile').value = ''; $('#mName').value = '';
         return load();
-      }).then(function () { setStatus('#musStatus', 'Musik tersimpan. Pengunjung bisa memutarnya dari tombol di pojok kiri bawah.'); },
+      }).then(function () { setStatus('#musStatus', 'Lagu "' + title + '" ditambahkan. Pengunjung bisa memilihnya dari tombol Lagu.'); },
         function (err) { setStatus('#musStatus', errText(err), true); })
-      .then(function () { musicBusy = false; $('#musSave').disabled = false; });
-  });
-  $('#musRemove').addEventListener('click', function () {
-    var old = state.meta.music_path; if (!old || musicBusy || !sb) return;
-    musicBusy = true; setStatus('#musStatus', 'Menghapus...');
-    sb.from('settings').upsert({ id: 1, music_path: null, music_name: null }).select().then(function (r) {
-      if (r.error || !r.data || !r.data.length) throw r.error || new Error('Tidak ada izin menyimpan.');
-      sb.storage.from(BUCKET).remove([old]);
-      if (audio) { audio.pause(); playing = false; }
-      return load();
-    }).then(function () { setStatus('#musStatus', 'Musik dihapus.'); }, function (err) { setStatus('#musStatus', errText(err), true); })
-      .then(function () { musicBusy = false; });
+      .then(function () { musicBusy = false; renderSongAdmin(); });
   });
 })();

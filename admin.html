@@ -55,10 +55,23 @@
 
 <button class="btn primary fab" type="button" data-open="memory" data-owner aria-label="Tambah kenangan baru">+ Kenangan</button>
 
-<button class="music" id="musicBtn" type="button" aria-pressed="false" hidden>
-  <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
-  <span id="musicLabel">Putar musik</span>
-</button>
+<div class="musicbar" id="musicBar" hidden>
+  <div class="playlist" id="playlist" hidden role="group" aria-label="Daftar lagu">
+    <p class="eyebrow">Pilih lagu</p>
+    <ol id="songList"></ol>
+    <div class="plctl" id="plCtl">
+      <button class="btn small" type="button" id="plPrev">Sebelumnya</button>
+      <button class="btn small" type="button" id="plNext">Berikutnya</button>
+    </div>
+  </div>
+  <button class="music" id="musicBtn" type="button" aria-pressed="false">
+    <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span id="musicLabel">Putar musik</span>
+  </button>
+  <button class="music mini" id="listBtn" type="button" aria-expanded="false" aria-controls="playlist" aria-label="Pilih lagu">
+    <span class="lst" aria-hidden="true"><i></i><i></i><i></i></span><span class="lbl">Lagu</span>
+  </button>
+</div>
 
 <div class="viewer" id="viewer" hidden aria-hidden="true">
   <canvas id="warp" aria-hidden="true"></canvas>
@@ -155,18 +168,22 @@
 <div class="scrim" id="sheet-music" hidden data-owner>
   <form class="sheet" id="musicForm" role="dialog" aria-modal="true" aria-labelledby="musTitle" novalidate>
     <p class="eyebrow">Latar suara</p>
-    <h2 id="musTitle">Atur musik</h2>
-    <p class="status" id="musCurrent"></p>
+    <h2 id="musTitle">Atur lagu</h2>
+    <p class="status" id="musWarn"></p>
+    <ul class="songadmin" id="musList"></ul>
+    <div class="field">
+      <label for="mName">Judul lagu</label>
+      <input type="text" id="mName" maxlength="80" placeholder="Contoh: Lagu pertama kita" autocomplete="off">
+    </div>
     <div class="field">
       <label for="mFile">File musik</label>
       <input type="file" id="mFile" accept="audio/*">
-      <p class="hint">Format mp3, m4a, atau ogg. Disarankan di bawah 15 MB. Musik diputar berulang setelah pengunjung menekan tombol putar.</p>
+      <p class="hint">Format mp3, m4a, atau ogg. Disarankan di bawah 15 MB per lagu. Pengunjung memilih lagu dari tombol Lagu di pojok kiri bawah. Urutan daftar sesuai urutan unggah.</p>
     </div>
     <p class="status" id="musStatus" role="status"></p>
     <div class="row">
-      <button class="btn" type="button" id="musRemove">Hapus musik</button>
       <button class="btn" type="button" data-close>Tutup</button>
-      <button class="btn primary" type="submit" id="musSave">Unggah musik</button>
+      <button class="btn primary" type="submit" id="musSave">Tambah lagu</button>
     </div>
   </form>
 </div>
